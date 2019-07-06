@@ -1,0 +1,26 @@
+#!/bin/bash
+. /etc/init.d/functions
+CONF_DIR=/etc/libvirt/qemu
+IMG_DIR=/var/lib/libvirt/images
+
+function createvm(){
+    if  [ -e ${IMG_DIR}/${1}.img ];then
+        echo_warning
+        echo "vm ${1}.img is exists"
+        return 1
+    else
+        qemu-img create -b ${IMG_DIR}/.node_base.qcow2 -f qcow2 ${IMG_DIR}/${1}.img 30G &>/dev/null
+        sed -e "s,node_base,${1}," ${IMG_DIR}/.node_base.xml >${CONF_DIR}/${1}.xml
+        sudo virsh define ${CONF_DIR}/${1}.xml &>/dev/null
+        echo_success
+        echo "vm ${1} create"
+    fi
+}
+if (( $# == 0 ));then
+   echo "$0 vm1 vm2 vm3 ... ..."
+else
+   for i in $@;do
+       createvm ${i}
+   done
+fi
+exit 0
