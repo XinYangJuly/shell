@@ -1,0 +1,65 @@
+#!/bin/bash
+#全备方式，一般在从机上执行，适用于小中型mysql数据库
+#删除15天以前备份
+# 脚本实现：按照数据库名称，全量备份mysql数据库并定期删除
+source ~/.bash_profile  #加载用户环境变量
+set -o nounset       #引用未初始化变量时退出
+set -o errexit      #执行shell命令遇到错误时退出
+#备份用户---需要在mysql中提前创建并授权
+#GRANT SELECT,RELOAD,LOCK TABLES,REPLICATION CLIENT,SHOW VIEW,TRIGGER,EVENT ON *.* TO 'backup'@'%' IDENTIFIED BY 'baifendian';
+user="backup"
+#备份用户密码
+password="123456"
+#mysql连接端口
+port="3306"
+mysql_path="/usr/local/mysql"
+date=$(date +%Y-%m-%d_%H-%M-%S)
+del_date=$(date +%Y-%m-%d)
+#备份路径---需要修改
+backup_path="/opt/mysql_backup/new-bak/data"
+backup_log_path="/opt/mysql_backup/new-bak/log"
+day=0
+backup_log="/opt/mysql_backup/new-bak/log/mysqldump_backup_${date}.log"
+# 除了127.0.0.1以外的ip截取 /sbin/ifconfig -a|grep inet|grep -v 127.0.0.1|grep -v inet6|awk '{print $2}'|tr -d "addr:"
+#删除以前备份
+find ${backup_path} -type f -mtime +$day -name "*.tar.gz" -exec rm -rf {} \; > /dev/null 2>&1 
+
+for f in `ls $backup_path`;
+do
+    if [[ $f = ${del_date}_* ]]; then
+        rm -rf $backup_path/$f
+    fi
+done
+#建立备份目录
+if [ ! -e $backup_path/${date} ];then
+  mkdir -p {$backup_path/${date},$backup_log_path}
+fi
+ 
+ 
+#echo "开始备份所有数据库" 
+echo "备份开始,结果查看 $backup_log"
+echo "==========All databases backups begin==========" >>$backup_log
+#备份并压缩
+  for dbname in $(mysql -P$port -u$user -p$password -A -e "show databases\G"|grep Database|grep -v schema|grep -v test|awk '{print $2}')
+  do
+  sleep 1
+  mysqldump -P$port  -u$user -p$password  $dbname > $backup_path/${date}/$dbname.sql
+  if [[ $? == 0 ]];then
+    cd $backup_path/${date}
+    size=$(du $backup_path/${date}/$dbname.sql -sh | awk '{print $1}')
+    echo "备份时间:${date} 备份方式:mysqldump 备份数据库:$dbname($size) 备份状态:成功！" >>$backup_log
+  else
+    cd $backup_path/${date}
+    echo "备份时间:${date} 备份方式:mysqldump 备份数据库:${dbname} 备份状态:失败,请查看日志." >>$backup_log
+  fi
+ 
+  done
+ 
+  cd $backup_path
+  tar zcpvf mysql_all_databases_$date.tar.gz $date
+  rm -rf $backup_path/$date
+
+du mysql_all_databases_$date.tar.gz -sh | awk '{print "文件:" $2 ",大小:" $1}'
+echo "==========All databases backups over==========" >>$backup_log
+
+
